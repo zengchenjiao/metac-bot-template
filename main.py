@@ -5,7 +5,6 @@ from datetime import datetime, timezone
 import dotenv
 from typing import Literal
 
-
 from forecasting_tools import (
     AskNewsSearcher,
     BinaryQuestion,
