@@ -79,12 +79,12 @@ class SpringTemplateBot2026(ForecastBot):
             "default": GeneralLlm(
                 model="openrouter/openai/gpt-4o", # "anthropic/claude-sonnet-4-20250514", etc (see docs for litellm)
                 temperature=0.3,
-                timeout=40,
+                timeout=300,
                 allowed_tries=2,
             ),
-            "summarizer": "openai/gpt-4o-mini",
+            "summarizer": "openai/gpt-4o",
             "researcher": "asknews/news-summaries",
-            "parser": "openai/gpt-4o-mini",
+            "parser": "openai/gpt-4o",
         },
     )
     ```
@@ -670,19 +670,26 @@ if __name__ == "__main__":
         use_research_summary_to_forecast=False,
         publish_reports_to_metaculus=True,
         folder_to_save_reports_to=None,
-        skip_previously_forecasted_questions=True,
+        skip_previously_forecasted_questions=True,  # 改为 False，允许重新预测
         extra_metadata_in_explanation=True,
-        # llms={  # choose your model names or GeneralLlm llms here, otherwise defaults will be chosen for you
-        #     "default": GeneralLlm(
-        #         model="openrouter/openai/gpt-4o", # "anthropic/claude-sonnet-4-20250514", etc (see docs for litellm)
-        #         temperature=0.3,
-        #         timeout=40,
-        #         allowed_tries=2,
-        #     ),
-        #     "summarizer": "openai/gpt-4o-mini",
-        #     "researcher": "asknews/news-summaries",
-        #     "parser": "openai/gpt-4o-mini",
-        # },
+        llms={  # choose your model names or GeneralLlm llms here, otherwise defaults will be chosen for you
+            "default": GeneralLlm(
+                model="openai/gpt-5",
+                temperature=0.3,
+                timeout=300,
+                allowed_tries=2,
+                api_base="https://api.yunwu.ai/v1",
+            ),
+            "summarizer": GeneralLlm(
+                model="openai/gpt-4o",
+                api_base="https://api.yunwu.ai/v1",
+            ),
+            "researcher": "no_research",  # set to "asknews/news-summaries" if you have AskNews keys
+            "parser": GeneralLlm(
+                model="openai/gpt-4o",
+                api_base="https://api.yunwu.ai/v1",
+            ),
+        },
     )
 
     client = MetaculusClient()
@@ -712,7 +719,6 @@ if __name__ == "__main__":
         # Example questions are a good way to test the bot's performance on a single question
         EXAMPLE_QUESTIONS = [
             "https://www.metaculus.com/questions/578/human-extinction-by-2100/",  # Human Extinction - Binary
-            "https://www.metaculus.com/questions/14333/age-of-oldest-human-as-of-2100/",  # Age of Oldest Human - Numeric
             "https://www.metaculus.com/questions/22427/number-of-new-leading-ai-labs/",  # Number of New Leading AI Labs - Multiple Choice
             "https://www.metaculus.com/c/diffusion-community/38880/how-many-us-labor-strikes-due-to-ai-in-2029/",  # Number of US Labor Strikes Due to AI in 2029 - Discrete
         ]
