@@ -7,7 +7,6 @@ from typing import Literal
 
 
 from forecasting_tools import (
-    AskNewsSearcher,
     BinaryQuestion,
     ForecastBot,
     GeneralLlm,
@@ -30,6 +29,7 @@ from forecasting_tools import (
     clean_indents,
     structure_output,
 )
+from guardian_searcher import GuardianSearcher
 
 dotenv.load_dotenv()
 logger = logging.getLogger(__name__)
@@ -78,13 +78,13 @@ class SpringTemplateBot2026(ForecastBot):
         ...
         llms={  # choose your model names or GeneralLlm llms here, otherwise defaults will be chosen for you
             "default": GeneralLlm(
-                model="openrouter/openai/gpt-4o", # "anthropic/claude-sonnet-4-20250514", etc (see docs for litellm)
+                model="gpt-4o-mini",  # 直接使用 OpenAI，不通过 OpenRouter
                 temperature=0.3,
                 timeout=40,
                 allowed_tries=2,
             ),
             "summarizer": "openai/gpt-4o-mini",
-            "researcher": "asknews/news-summaries",
+            "researcher": "guardian/news-search",
             "parser": "openai/gpt-4o-mini",
         },
     )
@@ -145,13 +145,8 @@ class SpringTemplateBot2026(ForecastBot):
 
             if isinstance(researcher, GeneralLlm):
                 research = await researcher.invoke(prompt)
-            elif (
-                researcher == "asknews/news-summaries"
-                or researcher == "asknews/deep-research/low-depth"
-                or researcher == "asknews/deep-research/medium-depth"
-                or researcher == "asknews/deep-research/high-depth"
-            ):
-                research = await AskNewsSearcher().call_preconfigured_version(
+            elif researcher.startswith("guardian"):
+                research = await GuardianSearcher().call_preconfigured_version(
                     researcher, prompt
                 )
             elif researcher.startswith("smart-searcher"):
@@ -673,17 +668,30 @@ if __name__ == "__main__":
         folder_to_save_reports_to=None,
         skip_previously_forecasted_questions=True,
         extra_metadata_in_explanation=True,
-        # llms={  # choose your model names or GeneralLlm llms here, otherwise defaults will be chosen for you
-        #     "default": GeneralLlm(
-        #         model="openrouter/openai/gpt-4o", # "anthropic/claude-sonnet-4-20250514", etc (see docs for litellm)
-        #         temperature=0.3,
-        #         timeout=40,
-        #         allowed_tries=2,
-        #     ),
-        #     "summarizer": "openai/gpt-4o-mini",
-        #     "researcher": "asknews/news-summaries",
-        #     "parser": "openai/gpt-4o-mini",
-        # },
+        llms={  # choose your model names or GeneralLlm llms here, otherwise defaults will be chosen for you
+            "default": GeneralLlm(
+                model="gpt-4o-mini",
+                temperature=0.3,
+                timeout=180,
+                allowed_tries=2,
+                api_base="https://api.wlai.vip/v1",  # 云雾 API 地址
+            ),
+            "summarizer": GeneralLlm(
+                model="gpt-4o-mini",
+                temperature=0.3,
+                timeout=180,
+                allowed_tries=2,
+                api_base="https://api.wlai.vip/v1",  # 云雾 API 地址
+            ),
+            "researcher": "guardian/news-search",
+            "parser": GeneralLlm(
+                model="gpt-4o-mini",
+                temperature=0.3,
+                timeout=180,
+                allowed_tries=2,
+                api_base="https://api.wlai.vip/v1",  # 云雾 API 地址
+            ),
+        },
     )
 
     client = MetaculusClient()
