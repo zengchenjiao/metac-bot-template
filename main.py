@@ -29,7 +29,8 @@ from forecasting_tools import (
     clean_indents,
     structure_output,
 )
-from guardian_searcher import GuardianSearcher
+from tavily_searcher import TavilySearcher
+from dspy_forecaster import DSPyForecasterHub
 
 dotenv.load_dotenv()
 logger = logging.getLogger(__name__)
@@ -118,6 +119,16 @@ class SpringTemplateBot2026(ForecastBot):
     )
     _concurrency_limiter = asyncio.Semaphore(_max_concurrent_questions)
     _structure_output_validation_samples = 2
+    _dspy_hub: "DSPyForecasterHub | None" = None
+
+    @classmethod
+    def _get_dspy_hub(cls) -> DSPyForecasterHub:
+        if cls._dspy_hub is None:
+            cls._dspy_hub = DSPyForecasterHub.get_instance(
+                model="gpt-4o-mini",
+                temperature=0.3,
+            )
+        return cls._dspy_hub
 
     ##################################### RESEARCH #####################################
 
@@ -145,8 +156,8 @@ class SpringTemplateBot2026(ForecastBot):
 
             if isinstance(researcher, GeneralLlm):
                 research = await researcher.invoke(prompt)
-            elif researcher.startswith("guardian"):
-                research = await GuardianSearcher().call_preconfigured_version(
+            elif researcher.startswith("guardian") or researcher.startswith("tavily"):
+                research = await TavilySearcher().call_preconfigured_version(
                     researcher, prompt
                 )
             elif researcher.startswith("smart-searcher"):
@@ -171,42 +182,17 @@ class SpringTemplateBot2026(ForecastBot):
     async def _run_forecast_on_binary(
         self, question: BinaryQuestion, research: str
     ) -> ReasonedPrediction[float]:
-        prompt = clean_indents(
-            f"""
-            You are a professional forecaster interviewing for a job.
-
-            Your interview question is:
-            {question.question_text}
-
-            Question background:
-            {question.background_info}
-
-
-            This question's outcome will be determined by the specific criteria below. These criteria have not yet been satisfied:
-            {question.resolution_criteria}
-
-            {question.fine_print}
-
-
-            Your research assistant says:
-            {research}
-
-            Today is {datetime.now().strftime("%Y-%m-%d")}.
-
-            Before answering you write:
-            (a) The time left until the outcome to the question is known.
-            (b) The status quo outcome if nothing changed.
-            (c) A brief description of a scenario that results in a No outcome.
-            (d) A brief description of a scenario that results in a Yes outcome.
-
-            You write your rationale remembering that good forecasters put extra weight on the status quo outcome since the world changes slowly most of the time.
-            {self._get_conditional_disclaimer_if_necessary(question)}
-
-            The last thing you write is your final answer as: "Probability: ZZ%", 0-100
-            """
+        hub = self._get_dspy_hub()
+        reasoning = await hub.forecast_binary(
+            question_text=question.question_text,
+            background_info=question.background_info or "",
+            resolution_criteria=question.resolution_criteria or "",
+            fine_print=question.fine_print or "",
+            research=research,
+            today_date=datetime.now().strftime("%Y-%m-%d"),
+            conditional_disclaimer=self._get_conditional_disclaimer_if_necessary(question),
         )
-
-        return await self._binary_prompt_to_forecast(question, prompt)
+        return await self._binary_prompt_to_forecast(question, reasoning)
 
     async def _binary_prompt_to_forecast(
         self,
@@ -233,45 +219,18 @@ class SpringTemplateBot2026(ForecastBot):
     async def _run_forecast_on_multiple_choice(
         self, question: MultipleChoiceQuestion, research: str
     ) -> ReasonedPrediction[PredictedOptionList]:
-        prompt = clean_indents(
-            f"""
-            You are a professional forecaster interviewing for a job.
-
-            Your interview question is:
-            {question.question_text}
-
-            The options are: {question.options}
-
-
-            Background:
-            {question.background_info}
-
-            {question.resolution_criteria}
-
-            {question.fine_print}
-
-
-            Your research assistant says:
-            {research}
-
-            Today is {datetime.now().strftime("%Y-%m-%d")}.
-
-            Before answering you write:
-            (a) The time left until the outcome to the question is known.
-            (b) The status quo outcome if nothing changed.
-            (c) A description of an scenario that results in an unexpected outcome.
-
-            {self._get_conditional_disclaimer_if_necessary(question)}
-            You write your rationale remembering that (1) good forecasters put extra weight on the status quo outcome since the world changes slowly most of the time, and (2) good forecasters leave some moderate probability on most options to account for unexpected outcomes.
-
-            The last thing you write is your final probabilities for the N options in this order {question.options} as:
-            Option_A: Probability_A
-            Option_B: Probability_B
-            ...
-            Option_N: Probability_N
-            """
+        hub = self._get_dspy_hub()
+        reasoning = await hub.forecast_multiple_choice(
+            question_text=question.question_text,
+            options=str(question.options),
+            background_info=question.background_info or "",
+            resolution_criteria=question.resolution_criteria or "",
+            fine_print=question.fine_print or "",
+            research=research,
+            today_date=datetime.now().strftime("%Y-%m-%d"),
+            conditional_disclaimer=self._get_conditional_disclaimer_if_necessary(question),
         )
-        return await self._multiple_choice_prompt_to_forecast(question, prompt)
+        return await self._multiple_choice_prompt_to_forecast(question, reasoning)
 
     async def _multiple_choice_prompt_to_forecast(
         self,
@@ -312,58 +271,20 @@ class SpringTemplateBot2026(ForecastBot):
         upper_bound_message, lower_bound_message = (
             self._create_upper_and_lower_bound_messages(question)
         )
-        prompt = clean_indents(
-            f"""
-            You are a professional forecaster interviewing for a job.
-
-            Your interview question is:
-            {question.question_text}
-
-            Background:
-            {question.background_info}
-
-            {question.resolution_criteria}
-
-            {question.fine_print}
-
-            Units for answer: {question.unit_of_measure if question.unit_of_measure else "Not stated (please infer this)"}
-
-            Your research assistant says:
-            {research}
-
-            Today is {datetime.now().strftime("%Y-%m-%d")}.
-
-            {lower_bound_message}
-            {upper_bound_message}
-
-            Formatting Instructions:
-            - Please notice the units requested and give your answer in these units (e.g. whether you represent a number as 1,000,000 or 1 million).
-            - Never use scientific notation.
-            - Always start with a smaller number (more negative if negative) and then increase from there. The value for percentile 10 should always be less than the value for percentile 20, and so on.
-
-            Before answering you write:
-            (a) The time left until the outcome to the question is known.
-            (b) The outcome if nothing changed.
-            (c) The outcome if the current trend continued.
-            (d) The expectations of experts and markets.
-            (e) A brief description of an unexpected scenario that results in a low outcome.
-            (f) A brief description of an unexpected scenario that results in a high outcome.
-
-            {self._get_conditional_disclaimer_if_necessary(question)}
-            You remind yourself that good forecasters are humble and set wide 90/10 confidence intervals to account for unknown unknowns.
-
-            The last thing you write is your final answer as:
-            "
-            Percentile 10: XX (lowest number value)
-            Percentile 20: XX
-            Percentile 40: XX
-            Percentile 60: XX
-            Percentile 80: XX
-            Percentile 90: XX (highest number value)
-            "
-            """
+        hub = self._get_dspy_hub()
+        reasoning = await hub.forecast_numeric(
+            question_text=question.question_text,
+            background_info=question.background_info or "",
+            resolution_criteria=question.resolution_criteria or "",
+            fine_print=question.fine_print or "",
+            unit_of_measure=question.unit_of_measure or "Not stated (please infer this)",
+            research=research,
+            today_date=datetime.now().strftime("%Y-%m-%d"),
+            lower_bound_message=lower_bound_message,
+            upper_bound_message=upper_bound_message,
+            conditional_disclaimer=self._get_conditional_disclaimer_if_necessary(question),
         )
-        return await self._numeric_prompt_to_forecast(question, prompt)
+        return await self._numeric_prompt_to_forecast(question, reasoning)
 
     async def _numeric_prompt_to_forecast(
         self,
@@ -683,7 +604,7 @@ if __name__ == "__main__":
                 allowed_tries=2,
                 api_base="https://api.wlai.vip/v1",  # 云雾 API 地址
             ),
-            "researcher": "guardian/news-search",
+            "researcher": "tavily/news-search",
             "parser": GeneralLlm(
                 model="gpt-4o-mini",
                 temperature=0.3,
