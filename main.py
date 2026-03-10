@@ -79,14 +79,14 @@ class SpringTemplateBot2026(ForecastBot):
         ...
         llms={  # choose your model names or GeneralLlm llms here, otherwise defaults will be chosen for you
             "default": GeneralLlm(
-                model="gpt-4o-mini",  # 直接使用 OpenAI，不通过 OpenRouter
+                model="gpt-4o",  # 直接使用 OpenAI，不通过 OpenRouter
                 temperature=0.3,
                 timeout=40,
                 allowed_tries=2,
             ),
-            "summarizer": "openai/gpt-4o-mini",
+            "summarizer": "openai/gpt-4o",
             "researcher": "guardian/news-search",
-            "parser": "openai/gpt-4o-mini",
+            "parser": "openai/gpt-4o",
         },
     )
     ```
@@ -125,8 +125,8 @@ class SpringTemplateBot2026(ForecastBot):
     def _get_dspy_hub(cls) -> DSPyForecasterHub:
         if cls._dspy_hub is None:
             cls._dspy_hub = DSPyForecasterHub.get_instance(
-                model="gpt-4o-mini",
-                temperature=0.3,
+                model="gpt-4o",
+                temperature=0.5,  # 平衡多样性和格式稳定性
             )
         return cls._dspy_hub
 
@@ -591,14 +591,14 @@ if __name__ == "__main__":
         extra_metadata_in_explanation=True,
         llms={  # choose your model names or GeneralLlm llms here, otherwise defaults will be chosen for you
             "default": GeneralLlm(
-                model="gpt-4o-mini",
+                model="gpt-4o",
                 temperature=0.3,
                 timeout=180,
                 allowed_tries=2,
                 api_base="https://api.wlai.vip/v1",  # 云雾 API 地址
             ),
             "summarizer": GeneralLlm(
-                model="gpt-4o-mini",
+                model="gpt-4o",
                 temperature=0.3,
                 timeout=180,
                 allowed_tries=2,
@@ -606,7 +606,7 @@ if __name__ == "__main__":
             ),
             "researcher": "tavily/news-search",
             "parser": GeneralLlm(
-                model="gpt-4o-mini",
+                model="gpt-4o",
                 temperature=0.3,
                 timeout=180,
                 allowed_tries=2,
