@@ -41,9 +41,9 @@ jobs:
         run: poetry install --no-interaction --no-root
       - name: Setup optimized forecasters
         run: |
-          echo '${{ secrets.OPTIMIZED_BINARY_FORECASTER }}' > optimized_binary_forecaster.json
-          echo '${{ secrets.OPTIMIZED_MC_FORECASTER }}' > optimized_mc_forecaster.json
-          echo '${{ secrets.OPTIMIZED_NUMERIC_FORECASTER }}' > optimized_numeric_forecaster.json
+          echo '${{ secrets.OPTIMIZED_BINARY_FORECASTER }}' | base64 -d > optimized_binary_forecaster.json
+          echo '${{ secrets.OPTIMIZED_MC_FORECASTER }}' | base64 -d > optimized_mc_forecaster.json
+          echo '${{ secrets.OPTIMIZED_NUMERIC_FORECASTER }}' | base64 -d > optimized_numeric_forecaster.json
       - name: Run bot
         run: |
           poetry run python main.py
