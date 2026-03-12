@@ -68,3 +68,9 @@ test_run.log
 
 # Claude Tasks
 /tmp/claude-*
+autocast/
+json/
+autocast_raw.json
+autocast_binary_trainset.json
+autocast_mc_trainset.json
+autocast_numeric_trainset.json
