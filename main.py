@@ -31,6 +31,7 @@ from forecasting_tools import (
 )
 from tavily_searcher import TavilySearcher
 from dspy_forecaster import DSPyForecasterHub
+from agent_forecaster import build_forecast_agent, build_initial_state
 
 dotenv.load_dotenv()
 logger = logging.getLogger(__name__)
@@ -133,66 +134,25 @@ class SpringTemplateBot2026(ForecastBot):
     ##################################### RESEARCH #####################################
 
     async def run_research(self, question: MetaculusQuestion) -> str:
-        async with self._concurrency_limiter:
-            research = ""
-            researcher = self.get_llm("researcher")
-
-            prompt = clean_indents(
-                f"""
-                You are an assistant to a superforecaster.
-                The superforecaster will give you a question they intend to forecast on.
-                To be a great assistant, you generate a concise but detailed rundown of the most relevant news, including if the question would resolve Yes or No based on current information.
-                You do not produce forecasts yourself.
-
-                Question:
-                {question.question_text}
-
-                This question's outcome will be determined by the specific criteria below:
-                {question.resolution_criteria}
-
-                {question.fine_print}
-                """
-            )
-
-            if isinstance(researcher, GeneralLlm):
-                research = await researcher.invoke(prompt)
-            elif researcher.startswith("guardian") or researcher.startswith("tavily"):
-                research = await TavilySearcher().call_preconfigured_version(
-                    researcher, prompt
-                )
-            elif researcher.startswith("smart-searcher"):
-                model_name = researcher.removeprefix("smart-searcher/")
-                searcher = SmartSearcher(
-                    model=model_name,
-                    temperature=0,
-                    num_searches_to_run=2,
-                    num_sites_per_search=10,
-                    use_advanced_filters=False,
-                )
-                research = await searcher.invoke(prompt)
-            elif not researcher or researcher == "None" or researcher == "no_research":
-                research = ""
-            else:
-                research = await self.get_llm("researcher", "llm").invoke(prompt)
-            logger.info(f"Found Research for URL {question.page_url}:\n{research}")
-            return research
+        # Research is handled inside the agent (research_node), so return empty here.
+        return ""
 
     ##################################### BINARY QUESTIONS #####################################
 
     async def _run_forecast_on_binary(
         self, question: BinaryQuestion, research: str
     ) -> ReasonedPrediction[float]:
-        hub = self._get_dspy_hub()
-        reasoning = await hub.forecast_binary(
+        agent = build_forecast_agent()
+        state = build_initial_state(
             question_text=question.question_text,
+            question_type="binary",
             background_info=question.background_info or "",
             resolution_criteria=question.resolution_criteria or "",
             fine_print=question.fine_print or "",
-            research=research,
-            today_date=datetime.now().strftime("%Y-%m-%d"),
             conditional_disclaimer=self._get_conditional_disclaimer_if_necessary(question),
         )
-        return await self._binary_prompt_to_forecast(question, reasoning)
+        result = await agent.ainvoke(state)
+        return await self._binary_prompt_to_forecast(question, result["prediction_text"])
 
     async def _binary_prompt_to_forecast(
         self,
@@ -219,18 +179,18 @@ class SpringTemplateBot2026(ForecastBot):
     async def _run_forecast_on_multiple_choice(
         self, question: MultipleChoiceQuestion, research: str
     ) -> ReasonedPrediction[PredictedOptionList]:
-        hub = self._get_dspy_hub()
-        reasoning = await hub.forecast_multiple_choice(
+        agent = build_forecast_agent()
+        state = build_initial_state(
             question_text=question.question_text,
-            options=str(question.options),
+            question_type="mc",
             background_info=question.background_info or "",
             resolution_criteria=question.resolution_criteria or "",
             fine_print=question.fine_print or "",
-            research=research,
-            today_date=datetime.now().strftime("%Y-%m-%d"),
             conditional_disclaimer=self._get_conditional_disclaimer_if_necessary(question),
+            options=str(question.options),
         )
-        return await self._multiple_choice_prompt_to_forecast(question, reasoning)
+        result = await agent.ainvoke(state)
+        return await self._multiple_choice_prompt_to_forecast(question, result["prediction_text"])
 
     async def _multiple_choice_prompt_to_forecast(
         self,
@@ -271,20 +231,20 @@ class SpringTemplateBot2026(ForecastBot):
         upper_bound_message, lower_bound_message = (
             self._create_upper_and_lower_bound_messages(question)
         )
-        hub = self._get_dspy_hub()
-        reasoning = await hub.forecast_numeric(
+        agent = build_forecast_agent()
+        state = build_initial_state(
             question_text=question.question_text,
+            question_type="numeric",
             background_info=question.background_info or "",
             resolution_criteria=question.resolution_criteria or "",
             fine_print=question.fine_print or "",
+            conditional_disclaimer=self._get_conditional_disclaimer_if_necessary(question),
             unit_of_measure=question.unit_of_measure or "Not stated (please infer this)",
-            research=research,
-            today_date=datetime.now().strftime("%Y-%m-%d"),
             lower_bound_message=lower_bound_message,
             upper_bound_message=upper_bound_message,
-            conditional_disclaimer=self._get_conditional_disclaimer_if_necessary(question),
         )
-        return await self._numeric_prompt_to_forecast(question, reasoning)
+        result = await agent.ainvoke(state)
+        return await self._numeric_prompt_to_forecast(question, result["prediction_text"])
 
     async def _numeric_prompt_to_forecast(
         self,

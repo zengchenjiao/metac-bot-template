@@ -5,9 +5,10 @@
 流程:
   1. 加载本地训练集（如不存在则先运行 build_trainset.py）
   2. 初始化 DSPy LM
-  3. 对每种题型运行 BootstrapFewShot 优化
-  4. 保存优化后的模型
-  5. 打印优化前后的指标对比
+  3. 评估 baseline（无 few-shot）
+  4. 运行 BootstrapFewShot 优化（选择 few-shot demos）
+  5. 评估 optimized（有 few-shot）
+  6. 打印两轮对比评分
 """
 import argparse
 import logging
@@ -165,7 +166,6 @@ def evaluate_numeric(module, evalset) -> dict:
             if median is None:
                 errors += 1
                 continue
-            # Normalize model output (real units) to [0,1] before comparing
             choices = ex.choices_meta if hasattr(ex, "choices_meta") else {}
             median_normalized = autocast_normalize(median, choices) if choices else max(0.0, min(1.0, median))
             maes.append(abs(median_normalized - ex.resolved_normalized))
@@ -179,27 +179,30 @@ def evaluate_numeric(module, evalset) -> dict:
 
 # ─────────────────────────── Per-type optimization ───────────────────────────
 
+def _load_data(output_path, load_fn, build_fn, raw):
+    if output_path.exists():
+        full = load_fn()
+    else:
+        full = build_fn(raw, TRAIN_SIZE + EVAL_SIZE)
+    return full[:TRAIN_SIZE], full[TRAIN_SIZE:TRAIN_SIZE + EVAL_SIZE]
+
+
 def run_binary(raw=None):
     print("\n" + "=" * 55)
-    print("  Binary Forecaster 优化")
+    print("  Binary Forecaster")
     print("=" * 55)
 
-    if BINARY_OUTPUT.exists():
-        full = load_binary()
-    else:
-        full = build_binary_trainset(raw, TRAIN_SIZE + EVAL_SIZE)
-        save_binary(full)
-
-    trainset = full[:TRAIN_SIZE]
-    evalset  = full[TRAIN_SIZE:TRAIN_SIZE + EVAL_SIZE]
+    trainset, evalset = _load_data(BINARY_OUTPUT, load_binary, build_binary_trainset, raw)
     logger.info(f"Binary — train: {len(trainset)}, eval: {len(evalset)}")
 
+    # Round 1: baseline (no few-shot)
+    print("\n  [Round 1] Baseline (no few-shot)")
     baseline = evaluate_binary(BinaryForecaster(), evalset)
-    logger.info(f"Baseline → Brier: {baseline['avg_brier']:.4f}, Acc: {baseline['accuracy']:.2%}")
 
-    optimized = optimize_forecaster(BinaryForecaster(), trainset, binary_metric, max_bootstrapped_demos=4)
-    result    = evaluate_binary(optimized, evalset)
-    logger.info(f"Optimized → Brier: {result['avg_brier']:.4f}, Acc: {result['accuracy']:.2%}")
+    # Round 2: optimized (with few-shot)
+    print("  [Round 2] Optimized (with few-shot)")
+    optimized = optimize_forecaster(BinaryForecaster(), trainset, binary_metric)
+    result = evaluate_binary(optimized, evalset)
 
     optimized.save(OPTIMIZED_BINARY_PATH)
     _print_comparison("Binary", baseline, result, metric="brier")
@@ -208,25 +211,18 @@ def run_binary(raw=None):
 
 def run_mc(raw=None):
     print("\n" + "=" * 55)
-    print("  MultipleChoice Forecaster 优化")
+    print("  MultipleChoice Forecaster")
     print("=" * 55)
 
-    if MC_OUTPUT.exists():
-        full = load_mc()
-    else:
-        full = build_mc_trainset(raw, TRAIN_SIZE + EVAL_SIZE)
-        save_mc(full)
-
-    trainset = full[:TRAIN_SIZE]
-    evalset  = full[TRAIN_SIZE:TRAIN_SIZE + EVAL_SIZE]
+    trainset, evalset = _load_data(MC_OUTPUT, load_mc, build_mc_trainset, raw)
     logger.info(f"MC — train: {len(trainset)}, eval: {len(evalset)}")
 
-    baseline  = evaluate_mc(MultipleChoiceForecaster(), evalset)
-    logger.info(f"Baseline → Brier: {baseline['avg_brier']:.4f}, Acc: {baseline['accuracy']:.2%}")
+    print("\n  [Round 1] Baseline (no few-shot)")
+    baseline = evaluate_mc(MultipleChoiceForecaster(), evalset)
 
-    optimized = optimize_forecaster(MultipleChoiceForecaster(), trainset, mc_metric, max_bootstrapped_demos=4)
-    result    = evaluate_mc(optimized, evalset)
-    logger.info(f"Optimized → Brier: {result['avg_brier']:.4f}, Acc: {result['accuracy']:.2%}")
+    print("  [Round 2] Optimized (with few-shot)")
+    optimized = optimize_forecaster(MultipleChoiceForecaster(), trainset, mc_metric)
+    result = evaluate_mc(optimized, evalset)
 
     optimized.save(OPTIMIZED_MC_PATH)
     _print_comparison("MC", baseline, result, metric="brier")
@@ -235,25 +231,18 @@ def run_mc(raw=None):
 
 def run_numeric(raw=None):
     print("\n" + "=" * 55)
-    print("  Numeric Forecaster 优化")
+    print("  Numeric Forecaster")
     print("=" * 55)
 
-    if NUMERIC_OUTPUT.exists():
-        full = load_numeric()
-    else:
-        full = build_numeric_trainset(raw, TRAIN_SIZE + EVAL_SIZE)
-        save_numeric(full)
-
-    trainset = full[:TRAIN_SIZE]
-    evalset  = full[TRAIN_SIZE:TRAIN_SIZE + EVAL_SIZE]
+    trainset, evalset = _load_data(NUMERIC_OUTPUT, load_numeric, build_numeric_trainset, raw)
     logger.info(f"Numeric — train: {len(trainset)}, eval: {len(evalset)}")
 
-    baseline  = evaluate_numeric(NumericForecaster(), evalset)
-    logger.info(f"Baseline → MAE: {baseline['avg_mae']:.4f}")
+    print("\n  [Round 1] Baseline (no few-shot)")
+    baseline = evaluate_numeric(NumericForecaster(), evalset)
 
-    optimized = optimize_forecaster(NumericForecaster(), trainset, numeric_metric, max_bootstrapped_demos=4)
-    result    = evaluate_numeric(optimized, evalset)
-    logger.info(f"Optimized → MAE: {result['avg_mae']:.4f}")
+    print("  [Round 2] Optimized (with few-shot)")
+    optimized = optimize_forecaster(NumericForecaster(), trainset, numeric_metric)
+    result = evaluate_numeric(optimized, evalset)
 
     optimized.save(OPTIMIZED_NUMERIC_PATH)
     _print_comparison("Numeric", baseline, result, metric="mae")
@@ -264,29 +253,36 @@ def run_numeric(raw=None):
 
 def _print_comparison(name: str, baseline: dict, result: dict, metric: str):
     print(f"\n{'─'*55}")
-    print(f"  {name} 优化结果")
+    print(f"  {name} — Baseline vs Optimized")
     print(f"{'─'*55}")
+    print(f"  {'':22} {'Baseline':>10}  {'Optimized':>10}  {'Delta':>10}")
+    print(f"  {'─'*22} {'─'*10}  {'─'*10}  {'─'*10}")
+
     if metric == "brier":
         b = baseline["avg_brier"]
         r = result["avg_brier"]
         ab = baseline.get("accuracy")
         ar = result.get("accuracy")
-        print(f"  {'Brier Score (↓)':<22} {b:>8.4f}  →  {r:>8.4f}  ({r-b:>+.4f})")
-        if ab is not None:
-            print(f"  {'Accuracy (↑)':<22} {ab:>8.2%}  →  {ar:>8.2%}  ({ar-ab:>+.2%})")
-        if r < b:
-            print(f"  ✅ 优化成功，Brier 降低 {b-r:.4f}")
-        else:
-            print(f"  ⚠️  未见明显提升")
-    else:  # mae
+        if b is not None and r is not None:
+            print(f"  {'Brier Score (↓)':<22} {b:>10.4f}  {r:>10.4f}  {r-b:>+10.4f}")
+        if ab is not None and ar is not None:
+            print(f"  {'Accuracy (↑)':<22} {ab:>9.2%}  {ar:>9.2%}  {ar-ab:>+9.2%}")
+    else:
         b = baseline["avg_mae"]
         r = result["avg_mae"]
-        print(f"  {'MAE (↓)':<22} {b:>8.4f}  →  {r:>8.4f}  ({r-b:>+.4f})")
+        if b is not None and r is not None:
+            print(f"  {'MAE (↓)':<22} {b:>10.4f}  {r:>10.4f}  {r-b:>+10.4f}")
+
+    print(f"  {'Eval samples':<22} {baseline['n']:>10}  {result['n']:>10}")
+    print(f"  {'Errors':<22} {baseline['errors']:>10}  {result['errors']:>10}")
+
+    if b is not None and r is not None:
         if r < b:
-            print(f"  ✅ 优化成功，MAE 降低 {b-r:.4f}")
+            print(f"\n  ✅ 优化有效，{metric.upper()} 降低 {b-r:.4f}")
+        elif r == b:
+            print(f"\n  ➖ 无变化")
         else:
-            print(f"  ⚠️  未见明显提升")
-    print(f"  Errors: {result['errors']}")
+            print(f"\n  ⚠️  优化后指标略有上升，few-shot demos 可能不适合当前评估集")
 
 
 # ─────────────────────────── Main ───────────────────────────
@@ -299,9 +295,8 @@ def main():
     )
     args = parser.parse_args()
 
-    configure_dspy_lm(model="gpt-4o", temperature=0.3)
+    configure_dspy_lm(model="gpt-4o-mini", temperature=0.3)
 
-    # 只下载一次数据集，三种题型共用
     need_download = (
         (args.type in ("binary", "all") and not BINARY_OUTPUT.exists()) or
         (args.type in ("mc", "all")     and not MC_OUTPUT.exists()) or
@@ -319,11 +314,10 @@ def main():
         run_numeric(raw)
 
     print("\n" + "=" * 55)
-    print("  所有优化完成，模型已保存：")
+    print("  优化完成，模型已保存：")
     for path in [OPTIMIZED_BINARY_PATH, OPTIMIZED_MC_PATH, OPTIMIZED_NUMERIC_PATH]:
         if os.path.exists(path):
             print(f"  ✅ {path}")
-    print("\n  重启 bot 后将自动加载优化后的模型。")
     print("=" * 55 + "\n")
 
     DSPyForecasterHub.reload()

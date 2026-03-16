@@ -17,6 +17,7 @@ forecasting-tools = "^0.2.80"
 dspy = ">=2.5"
 tavily-python = "^0.7.22"
 datasets = "^3.0.0"
+langgraph = ">=0.2"
 
 
 [tool.poetry.group.integrations]

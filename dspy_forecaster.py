@@ -8,7 +8,7 @@ import logging
 from typing import Optional
 
 import dspy
-from dspy.teleprompt import BootstrapFewShotWithRandomSearch
+from dspy.teleprompt import BootstrapFewShot
 
 logger = logging.getLogger(__name__)
 
@@ -179,9 +179,9 @@ class NumericForecaster(dspy.Module):
 
 # ─────────────────────────── Hub ───────────────────────────
 
-OPTIMIZED_BINARY_PATH = "optimized_binary_forecaster.json"
-OPTIMIZED_MC_PATH = "optimized_mc_forecaster.json"
-OPTIMIZED_NUMERIC_PATH = "optimized_numeric_forecaster.json"
+OPTIMIZED_BINARY_PATH = "json/optimized_binary_forecaster.json"
+OPTIMIZED_MC_PATH = "json/optimized_mc_forecaster.json"
+OPTIMIZED_NUMERIC_PATH = "json/optimized_numeric_forecaster.json"
 
 
 class DSPyForecasterHub:
@@ -348,42 +348,17 @@ def optimize_forecaster(
     module: dspy.Module,
     trainset: list,
     metric_fn=binary_metric,
-    max_bootstrapped_demos: int = 8,
-    num_candidate_programs: int = 10,
+    max_bootstrapped_demos: int = 4,
 ) -> dspy.Module:
     """
-    Optimize a forecaster module using BootstrapFewShotWithRandomSearch.
+    Optimize a forecaster module using BootstrapFewShot.
 
-    Args:
-        module: A BinaryForecaster / MultipleChoiceForecaster / NumericForecaster instance
-        trainset: List of dspy.Example with input fields + resolved_value
-        metric_fn: callable(example, prediction) -> float, higher is better
-        max_bootstrapped_demos: Number of few-shot examples to bootstrap
-        num_candidate_programs: Number of candidate programs to evaluate before picking the best
-
-    Returns:
-        Compiled (optimized) module with injected few-shot examples
-
-    Example trainset entry:
-        dspy.Example(
-            question_text="Will X happen by Y?",
-            background_info="...",
-            resolution_criteria="...",
-            fine_print="",
-            research="...",
-            today_date="2025-01-15",
-            conditional_disclaimer="",
-            resolved_value=1.0,
-        ).with_inputs(
-            "question_text", "background_info", "resolution_criteria",
-            "fine_print", "research", "today_date", "conditional_disclaimer"
-        )
+    从 trainset 中选出得分最高的 max_bootstrapped_demos 条作为 few-shot examples。
     """
-    teleprompter = BootstrapFewShotWithRandomSearch(
+    teleprompter = BootstrapFewShot(
         metric=metric_fn,
         max_bootstrapped_demos=max_bootstrapped_demos,
-        max_labeled_demos=8,
-        num_candidate_programs=num_candidate_programs,
-        num_threads=1,
+        max_labeled_demos=max_bootstrapped_demos,
+        max_rounds=1,
     )
     return teleprompter.compile(module, trainset=trainset)

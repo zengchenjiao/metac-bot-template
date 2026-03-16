@@ -12,9 +12,9 @@ import dspy
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger(__name__)
 
-BINARY_OUTPUT = Path("autocast_binary_trainset.json")
-MC_OUTPUT = Path("autocast_mc_trainset.json")
-NUMERIC_OUTPUT = Path("autocast_numeric_trainset.json")
+BINARY_OUTPUT = Path("json/autocast_binary_trainset.json")
+MC_OUTPUT = Path("json/autocast_mc_trainset.json")
+NUMERIC_OUTPUT = Path("json/autocast_numeric_trainset.json")
 
 MAX_BINARY = 300
 MAX_MC = 200
@@ -72,7 +72,7 @@ def autocast_normalize(value: float, choices: dict) -> float:
 # ─────────────────────────── Builders ───────────────────────────
 
 RAW_TRAIN_URL = "https://huggingface.co/datasets/AlgoveraAI/autocast/resolve/main/autocast_questions.json"
-LOCAL_RAW_PATH = Path("autocast_raw.json")
+LOCAL_RAW_PATH = Path("json/autocast_raw.json")
 
 
 def _load_dataset() -> list:
