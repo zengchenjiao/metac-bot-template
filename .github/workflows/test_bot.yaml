@@ -58,3 +58,4 @@ jobs:
           ASKNEWS_CLIENT_ID: ${{ secrets.ASKNEWS_CLIENT_ID }}
           ASKNEWS_SECRET: ${{ secrets.ASKNEWS_SECRET }}
           TAVILY_API_KEY: ${{ secrets.TAVILY_API_KEY }}
+          OPENAI_AGENTS_DISABLE_TRACING: "1"
