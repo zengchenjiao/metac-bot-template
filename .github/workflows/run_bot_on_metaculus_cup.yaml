@@ -32,9 +32,10 @@ jobs:
         run: poetry install --no-interaction --no-root
       - name: Setup optimized forecasters
         run: |
-          echo '${{ secrets.OPTIMIZED_BINARY_FORECASTER }}' | base64 -d > optimized_binary_forecaster.json
-          echo '${{ secrets.OPTIMIZED_MC_FORECASTER }}' | base64 -d > optimized_mc_forecaster.json
-          echo '${{ secrets.OPTIMIZED_NUMERIC_FORECASTER }}' | base64 -d > optimized_numeric_forecaster.json
+          mkdir -p json
+          echo '${{ secrets.OPTIMIZED_BINARY_FORECASTER }}' | base64 -d > json/optimized_binary_forecaster.json
+          echo '${{ secrets.OPTIMIZED_MC_FORECASTER }}' | base64 -d > json/optimized_mc_forecaster.json
+          echo '${{ secrets.OPTIMIZED_NUMERIC_FORECASTER }}' | base64 -d > json/optimized_numeric_forecaster.json
       - name: Run bot
         run: |
           poetry run python main.py --mode metaculus_cup
@@ -49,3 +50,4 @@ jobs:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           ASKNEWS_CLIENT_ID: ${{ secrets.ASKNEWS_CLIENT_ID }}
           ASKNEWS_SECRET: ${{ secrets.ASKNEWS_SECRET }}
+          TAVILY_API_KEY: ${{ secrets.TAVILY_API_KEY }}
