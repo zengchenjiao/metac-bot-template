@@ -74,3 +74,4 @@ autocast_raw.json
 autocast_binary_trainset.json
 autocast_mc_trainset.json
 autocast_numeric_trainset.json
+metaculus_questions.json
