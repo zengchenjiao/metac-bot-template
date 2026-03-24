@@ -1,26 +1,27 @@
 # Metaculus 预测机器人 - 中文文档
 
-这是一个基于 AI 的 Metaculus 预测机器人，使用 GPT-4o-mini 模型和 Guardian News API 进行研究和预测。
+基于 AI 的 Metaculus 预测锦标赛机器人，使用多角色 Agent 系统 + DSPy 优化 + Tavily 新闻搜索。
 
-## 🎯 功能特点
+## 功能特点
 
-- ✅ 自动从 Guardian News 获取相关新闻
-- ✅ 使用 GPT-4o-mini 生成预测推理
-- ✅ 支持二元、多选、数值和日期问题
-- ✅ 自动发布预测到 Metaculus
-- ✅ 成本追踪和性能监控
-- ✅ 支持云雾 API
+- 5 角色并行预测（Base Rate / News / Contrarian / Community Anchor / Domain Expert）
+- Meta-predictor 综合多角色输出，生成最终预测
+- DSPy BootstrapFewShot 优化，自动选择 few-shot 示例
+- Tavily API 新闻搜索，按角色差异化搜索策略
+- 无社区预测时自动降级为 4 角色模式
+- 支持 Binary / MC / Numeric / Date / Conditional 问题
+- GitHub Actions 每 20 分钟自动运行
 
-## 📋 前置要求
+## 前置要求
 
-- Python 3.12+
+- Python 3.11+
 - Poetry
-- 有效的 API Keys:
+- API Keys:
   - Metaculus Token
-  - OpenAI API Key (或云雾 API Key)
-  - Guardian API Key
+  - OpenAI API Key（或云雾 API Key）
+  - Tavily API Key
 
-## 🚀 快速开始
+## 快速开始
 
 ### 1. 安装依赖
 
@@ -30,288 +31,129 @@ poetry install
 
 ### 2. 配置环境变量
 
-复制 `.env.template` 到 `.env` 并填入你的 API keys:
-
 ```bash
 cp .env.template .env
 ```
 
-编辑 `.env`:
+编辑 `.env`：
 
 ```env
 METACULUS_TOKEN=你的_metaculus_token
 OPENAI_API_KEY=你的_openai_api_key
-GUARDIAN_API_KEY=你的_guardian_api_key
+TAVILY_API_KEY=你的_tavily_api_key
 ```
 
 ### 3. 运行测试
 
 ```bash
-# 方式 1: 使用快速测试脚本
+# 快速测试脚本
 ./quick_test.sh
 
-# 方式 2: 直接运行
+# 或直接运行
 poetry run python main.py --mode test_questions
 ```
 
-## 📊 运行模式
-
-### 1. 测试模式（推荐用于开发）
-
-预测 2 个示例问题：
+## 运行模式
 
 ```bash
+# 测试模式 - 预测 2 个示例问题
 poetry run python main.py --mode test_questions
-```
 
-### 2. 锦标赛模式
-
-预测指定锦标赛中的所有开放问题：
-
-```bash
+# 锦标赛模式 - 预测锦标赛中所有开放问题
 poetry run python main.py --mode tournament
-```
 
-### 3. Metaculus Cup 模式
-
-预测 Metaculus Cup 中的问题：
-
-```bash
+# Metaculus Cup 模式
 poetry run python main.py --mode metaculus_cup
 ```
 
-## 🔧 配置说明
-
-### 核心配置
-
-在 `main.py` 中修改机器人配置：
-
-```python
-template_bot = SpringTemplateBot2026(
-    research_reports_per_question=1,      # 每个问题的研究报告数
-    predictions_per_research_report=5,    # 每个报告生成的预测数
-    publish_reports_to_metaculus=True,    # 是否发布到 Metaculus
-    skip_previously_forecasted_questions=True,  # 跳过已预测的问题
-)
-```
-
-### 模型配置
-
-```python
-llms={
-    "default": GeneralLlm(
-        model="gpt-4o-mini",              # 模型名称
-        temperature=0.3,                   # 温度参数
-        timeout=180,                       # 超时时间（秒）
-        allowed_tries=2,                   # 重试次数
-        api_base="https://api.wlai.vip/v1",  # API 地址（云雾）
-    ),
-    "researcher": "guardian/news-search",  # 研究来源
-}
-```
-
-## 📈 性能指标
-
-当前配置的性能：
-
-- **成本**: ~$0.01 / 问题
-- **速度**: ~0.7 分钟 / 问题
-- **成功率**: 100%
-
-## 🛠️ 实用工具
-
-### 1. 检查锦标赛状态
-
-```bash
-# 检查所有默认锦标赛
-poetry run python check_tournament.py
-
-# 检查特定锦标赛
-poetry run python check_tournament.py 32916
-```
-
-### 2. 快速测试
-
-```bash
-./quick_test.sh
-```
-
-### 3. 查看使用指南
-
-```bash
-cat USAGE_GUIDE.md
-```
-
-## 📝 配置建议
-
-### 质量 vs 成本权衡
-
-| 场景 | research_reports | predictions_per_report | 成本 | 质量 |
-|------|-----------------|----------------------|------|------|
-| 快速测试 | 1 | 3 | 低 | 中 |
-| 标准使用 | 1 | 5 | 中 | 高 |
-| 高质量预测 | 2 | 7 | 高 | 很高 |
-| 竞赛模式 | 3 | 10 | 很高 | 最高 |
-
-### 模型选择
-
-| 模型 | 成本 | 质量 | 速度 | 推荐场景 |
-|------|------|------|------|---------|
-| gpt-3.5-turbo | 低 | 中 | 快 | 快速测试 |
-| gpt-4o-mini | 中 | 高 | 中 | 标准使用 |
-| gpt-4o | 高 | 很高 | 慢 | 竞赛模式 |
-
-## 🔍 研究来源选项
-
-### 1. Guardian News API（当前使用）
-
-```python
-"researcher": "guardian/news-search"
-```
-
-- ✅ 高质量新闻来源
-- ✅ 免费 API
-- ⚠️ 仅限英文新闻
-
-### 2. Smart Searcher（网络搜索）
-
-```python
-"researcher": "smart-searcher/gpt-4o-mini"
-```
-
-- ✅ 更广泛的信息来源
-- ✅ 自动搜索优化
-- ⚠️ 成本较高
-
-### 3. 无研究模式
-
-```python
-"researcher": "no_research"
-```
-
-- ✅ 最快速度
-- ✅ 最低成本
-- ⚠️ 质量较低
-
-## 🐛 常见问题
-
-### Q1: API 超时错误
-
-**问题**: `litellm.Timeout: APITimeoutError - Request timed out`
-
-**解决方案**:
-```python
-timeout=180,  # 增加超时时间到 180-300 秒
-```
-
-### Q2: 锦标赛返回 0 个问题
-
-**问题**: `Retrieved 0 questions from tournament`
-
-**解决方案**:
-1. 检查锦标赛是否已开放
-2. 使用 `check_tournament.py` 验证
-3. 先用 `test_questions` 模式测试
-
-### Q3: 成本过高
-
-**解决方案**:
-- 减少 `predictions_per_research_report`
-- 使用 `gpt-3.5-turbo` 模型
-- 减少 `research_reports_per_question`
-
-### Q4: 预测质量不够
-
-**解决方案**:
-- 增加 `predictions_per_research_report`
-- 使用 `gpt-4o` 模型
-- 增加 `research_reports_per_question`
-- 使用 `smart-searcher` 研究来源
-
-## 📚 项目结构
+## 项目结构
 
 ```
 metac-bot-template/
-├── main.py                 # 主程序
-├── guardian_searcher.py    # Guardian API 集成
-├── .env                    # 环境变量（不要提交到 git）
-├── .env.template           # 环境变量模板
-├── pyproject.toml          # 项目依赖
-├── check_tournament.py     # 锦标赛检查工具
-├── quick_test.sh           # 快速测试脚本
-├── USAGE_GUIDE.md          # 详细使用指南
-├── run_summary.md          # 运行结果总结
-└── README_CN.md            # 中文文档（本文件）
+├── main.py                          # 入口
+├── main_with_no_framework.py        # 独立版本
+├── quick_test.sh
+│
+├── forecaster/                      # 核心预测模块
+│   ├── dspy_forecaster.py           # DSPy Signature + Hub
+│   ├── multi_role_forecaster.py     # 多角色 Agent + Meta-predictor
+│   ├── agent_forecaster.py          # LangGraph 迭代 Agent
+│   └── tavily_searcher.py           # Tavily 搜索封装
+│
+├── training/                        # 训练 & 优化
+│   ├── build_trainset.py            # Autocast 训练集
+│   ├── build_metaculus_trainset.py  # Metaculus 训练集
+│   └── optimize_forecaster.py       # DSPy 优化
+│
+├── tools/                           # 工具脚本
+│   ├── check_tournament.py          # 锦标赛检查
+│   ├── estimate_cost.py             # 成本估算
+│   └── metaculus_api.py             # Metaculus 数据下载
+│
+├── json/                            # 训练集 & 优化模型
+├── autocast/                        # Autocast 原始数据
+├── integrations/                    # 第三方集成
+└── md/                              # 文档
 ```
 
-## 🔐 安全注意事项
-
-1. **不要提交 `.env` 文件到 git**
-2. **定期轮换 API keys**
-3. **监控 API 使用量**
-4. **设置合理的超时和重试限制**
-
-## 📊 监控和日志
-
-### 查看详细日志
-
-```bash
-poetry run python main.py --mode test_questions 2>&1 | tee run.log
-```
-
-### 启用调试模式
+## 核心配置
 
 在 `main.py` 中修改：
 
 ```python
-logging.basicConfig(
-    level=logging.DEBUG,  # 改为 DEBUG
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+template_bot = SpringTemplateBot2026(
+    research_reports_per_question=1,
+    predictions_per_research_report=1,
+    publish_reports_to_metaculus=True,
+    skip_previously_forecasted_questions=True,
+    llms={
+        "default": GeneralLlm(
+            model="gpt-4o",
+            temperature=0.3,
+            timeout=180,
+            api_base="https://api.wlai.vip/v1",
+        ),
+        "researcher": "tavily/news-search",
+        ...
+    },
 )
 ```
 
-## 🎯 最佳实践
+## DSPy 优化
 
-1. **先测试后部署**
-   - 始终先用 `test_questions` 模式测试
-   - 验证配置和成本
+```bash
+# 使用 Autocast 数据优化
+poetry run python training/optimize_forecaster.py --type all --source autocast
 
-2. **逐步扩展**
-   - 从少量问题开始
-   - 监控性能和成本
-   - 根据结果调整参数
+# 使用 Metaculus 数据优化
+poetry run python training/optimize_forecaster.py --type all --source metaculus
+```
 
-3. **定期检查**
-   - 查看预测准确性
-   - 监控 API 使用
-   - 优化配置
+优化后的模型保存到 `json/optimized_*_forecaster.json`，运行时自动加载。
 
-4. **备份配置**
-   - 保存有效的参数组合
-   - 记录成本和性能数据
+## 工具脚本
 
-## 🤝 贡献
+```bash
+# 检查锦标赛状态
+poetry run python tools/check_tournament.py
 
-欢迎提交 Issue 和 Pull Request！
+# 估算成本
+poetry run python tools/estimate_cost.py 10
+```
 
-## 📄 许可证
+## 常见问题
 
-本项目基于 Metaculus 的模板，遵循相应的开源许可证。
+**API 超时** — 增加 timeout 到 180-300 秒
 
-## 🔗 相关链接
+**锦标赛返回 0 个问题** — 检查锦标赛是否已开放，先用 test_questions 模式测试
 
-- [Metaculus 官网](https://www.metaculus.com/)
-- [Forecasting Tools 文档](https://github.com/Metaculus/forecasting-tools)
-- [Guardian API 文档](https://open-platform.theguardian.com/)
-- [云雾 API](https://api.wlai.vip/)
+**成本控制** — 减少 predictions_per_research_report，或使用更便宜的模型
 
-## 📞 技术支持
+## 相关链接
 
-- **GitHub Issues**: [提交问题](https://github.com/anthropics/claude-code/issues)
-- **Metaculus 社区**: [访问论坛](https://www.metaculus.com/questions/)
+- [Metaculus](https://www.metaculus.com/)
+- [forecasting-tools](https://github.com/Metaculus/forecasting-tools)
+- [Tavily API](https://tavily.com/)
+- [DSPy](https://github.com/stanfordnlp/dspy)
 
----
-
-**祝你预测成功！** 🎯🚀
-
-最后更新: 2026-03-06
+最后更新: 2026-03-20

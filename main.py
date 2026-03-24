@@ -29,9 +29,10 @@ from forecasting_tools import (
     clean_indents,
     structure_output,
 )
-from tavily_searcher import TavilySearcher
-from dspy_forecaster import DSPyForecasterHub
-from agent_forecaster import build_forecast_agent, build_initial_state
+from forecaster.tavily_searcher import TavilySearcher
+from forecaster.dspy_forecaster import DSPyForecasterHub
+from forecaster.multi_role_forecaster import run_all_role_agents, meta_predict
+import config.settings as cfg
 
 dotenv.load_dotenv()
 logger = logging.getLogger(__name__)
@@ -115,19 +116,17 @@ class SpringTemplateBot2026(ForecastBot):
     Additionally OpenRouter has large rate limits immediately on account creation
     """
 
-    _max_concurrent_questions = (
-        1  # Set this to whatever works for your search-provider/ai-model rate limits
-    )
+    _max_concurrent_questions = cfg.MAX_CONCURRENT_QUESTIONS
     _concurrency_limiter = asyncio.Semaphore(_max_concurrent_questions)
-    _structure_output_validation_samples = 2
+    _structure_output_validation_samples = cfg.STRUCTURE_OUTPUT_VALIDATION_SAMPLES
     _dspy_hub: "DSPyForecasterHub | None" = None
 
     @classmethod
     def _get_dspy_hub(cls) -> DSPyForecasterHub:
         if cls._dspy_hub is None:
             cls._dspy_hub = DSPyForecasterHub.get_instance(
-                model="gpt-4o",
-                temperature=0.5,  # 平衡多样性和格式稳定性
+                model=cfg.DSPY_HUB_MODEL,
+                temperature=cfg.DSPY_HUB_TEMPERATURE,
             )
         return cls._dspy_hub
 
@@ -142,17 +141,23 @@ class SpringTemplateBot2026(ForecastBot):
     async def _run_forecast_on_binary(
         self, question: BinaryQuestion, research: str
     ) -> ReasonedPrediction[float]:
-        agent = build_forecast_agent()
-        state = build_initial_state(
+        has_community = bool(question.num_forecasters)
+        role_results = await run_all_role_agents(
             question_text=question.question_text,
             question_type="binary",
             background_info=question.background_info or "",
             resolution_criteria=question.resolution_criteria or "",
             fine_print=question.fine_print or "",
             conditional_disclaimer=self._get_conditional_disclaimer_if_necessary(question),
+            has_community_prediction=has_community,
         )
-        result = await agent.ainvoke(state)
-        return await self._binary_prompt_to_forecast(question, result["prediction_text"])
+        meta_output = await meta_predict(
+            question_text=question.question_text,
+            question_type="binary",
+            role_results=role_results,
+            has_community_prediction=has_community,
+        )
+        return await self._binary_prompt_to_forecast(question, meta_output)
 
     async def _binary_prompt_to_forecast(
         self,
@@ -179,8 +184,8 @@ class SpringTemplateBot2026(ForecastBot):
     async def _run_forecast_on_multiple_choice(
         self, question: MultipleChoiceQuestion, research: str
     ) -> ReasonedPrediction[PredictedOptionList]:
-        agent = build_forecast_agent()
-        state = build_initial_state(
+        has_community = bool(question.num_forecasters)
+        role_results = await run_all_role_agents(
             question_text=question.question_text,
             question_type="mc",
             background_info=question.background_info or "",
@@ -188,9 +193,16 @@ class SpringTemplateBot2026(ForecastBot):
             fine_print=question.fine_print or "",
             conditional_disclaimer=self._get_conditional_disclaimer_if_necessary(question),
             options=str(question.options),
+            has_community_prediction=has_community,
         )
-        result = await agent.ainvoke(state)
-        return await self._multiple_choice_prompt_to_forecast(question, result["prediction_text"])
+        meta_output = await meta_predict(
+            question_text=question.question_text,
+            question_type="mc",
+            role_results=role_results,
+            options=str(question.options),
+            has_community_prediction=has_community,
+        )
+        return await self._multiple_choice_prompt_to_forecast(question, meta_output)
 
     async def _multiple_choice_prompt_to_forecast(
         self,
@@ -231,8 +243,8 @@ class SpringTemplateBot2026(ForecastBot):
         upper_bound_message, lower_bound_message = (
             self._create_upper_and_lower_bound_messages(question)
         )
-        agent = build_forecast_agent()
-        state = build_initial_state(
+        has_community = bool(question.num_forecasters)
+        role_results = await run_all_role_agents(
             question_text=question.question_text,
             question_type="numeric",
             background_info=question.background_info or "",
@@ -242,9 +254,15 @@ class SpringTemplateBot2026(ForecastBot):
             unit_of_measure=question.unit_of_measure or "Not stated (please infer this)",
             lower_bound_message=lower_bound_message,
             upper_bound_message=upper_bound_message,
+            has_community_prediction=has_community,
         )
-        result = await agent.ainvoke(state)
-        return await self._numeric_prompt_to_forecast(question, result["prediction_text"])
+        meta_output = await meta_predict(
+            question_text=question.question_text,
+            question_type="numeric",
+            role_results=role_results,
+            has_community_prediction=has_community,
+        )
+        return await self._numeric_prompt_to_forecast(question, meta_output)
 
     async def _numeric_prompt_to_forecast(
         self,
@@ -514,8 +532,8 @@ class SpringTemplateBot2026(ForecastBot):
 
 if __name__ == "__main__":
     logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+        level=getattr(logging, cfg.LOG_LEVEL),
+        format=cfg.LOG_FORMAT,
     )
 
     # Suppress LiteLLM logging
@@ -541,51 +559,39 @@ if __name__ == "__main__":
         "test_questions",
     ], "Invalid run mode"
 
+    def _make_llm() -> GeneralLlm:
+        return GeneralLlm(
+            model=cfg.LLM_MODEL,
+            temperature=cfg.LLM_TEMPERATURE,
+            timeout=cfg.LLM_TIMEOUT,
+            allowed_tries=cfg.LLM_ALLOWED_TRIES,
+            api_base=cfg.OPENAI_API_BASE,
+        )
+
     template_bot = SpringTemplateBot2026(
-        research_reports_per_question=1,
-        predictions_per_research_report=5,
-        use_research_summary_to_forecast=False,
-        publish_reports_to_metaculus=True,
-        folder_to_save_reports_to=None,
-        skip_previously_forecasted_questions=True,
-        extra_metadata_in_explanation=True,
-        llms={  # choose your model names or GeneralLlm llms here, otherwise defaults will be chosen for you
-            "default": GeneralLlm(
-                model="gpt-4o",
-                temperature=0.3,
-                timeout=180,
-                allowed_tries=2,
-                api_base="https://api.wlai.vip/v1",  # 云雾 API 地址
-            ),
-            "summarizer": GeneralLlm(
-                model="gpt-4o",
-                temperature=0.3,
-                timeout=180,
-                allowed_tries=2,
-                api_base="https://api.wlai.vip/v1",  # 云雾 API 地址
-            ),
+        research_reports_per_question=cfg.RESEARCH_REPORTS_PER_QUESTION,
+        predictions_per_research_report=cfg.PREDICTIONS_PER_RESEARCH_REPORT,
+        use_research_summary_to_forecast=cfg.USE_RESEARCH_SUMMARY_TO_FORECAST,
+        publish_reports_to_metaculus=cfg.PUBLISH_REPORTS_TO_METACULUS,
+        folder_to_save_reports_to=cfg.FOLDER_TO_SAVE_REPORTS_TO,
+        skip_previously_forecasted_questions=cfg.SKIP_PREVIOUSLY_FORECASTED_QUESTIONS,
+        extra_metadata_in_explanation=cfg.EXTRA_METADATA_IN_EXPLANATION,
+        llms={
+            "default": _make_llm(),
+            "summarizer": _make_llm(),
             "researcher": "tavily/news-search",
-            "parser": GeneralLlm(
-                model="gpt-4o",
-                temperature=0.3,
-                timeout=180,
-                allowed_tries=2,
-                api_base="https://api.wlai.vip/v1",  # 云雾 API 地址
-            ),
+            "parser": _make_llm(),
         },
     )
 
     client = MetaculusClient()
     if run_mode == "tournament":
-        # You may want to change this to the specific tournament ID you want to forecast on
         forecast_reports = asyncio.run(
             template_bot.forecast_on_tournament(
-                32916, return_exceptions=True
+                cfg.DEFAULT_TOURNAMENT_ID, return_exceptions=True
             )
         )
     elif run_mode == "metaculus_cup":
-        # The Metaculus cup is a good way to test the bot's performance on regularly open questions. You can also use AXC_2025_TOURNAMENT_ID = 32564 or AI_2027_TOURNAMENT_ID = "ai-2027"
-        # The Metaculus cup may not be initialized near the beginning of a season (i.e. January, May, September)
         template_bot.skip_previously_forecasted_questions = False
         forecast_reports = asyncio.run(
             template_bot.forecast_on_tournament(
@@ -593,15 +599,10 @@ if __name__ == "__main__":
             )
         )
     elif run_mode == "test_questions":
-        # Example questions are a good way to test the bot's performance on a single question
-        EXAMPLE_QUESTIONS = [
-            "https://www.metaculus.com/questions/578/human-extinction-by-2100/",  # Human Extinction - Binary
-            "https://www.metaculus.com/questions/22427/number-of-new-leading-ai-labs/",  # Number of New Leading AI Labs - Multiple Choice
-        ]
         template_bot.skip_previously_forecasted_questions = False
         questions = [
-            client.get_question_by_url(question_url)
-            for question_url in EXAMPLE_QUESTIONS
+            client.get_question_by_url(url)
+            for url in cfg.EXAMPLE_QUESTIONS
         ]
         forecast_reports = asyncio.run(
             template_bot.forecast_questions(questions, return_exceptions=True)

@@ -10,17 +10,21 @@ from typing import Optional
 import dspy
 from dspy.teleprompt import BootstrapFewShot
 
+import config.settings as cfg
+
 logger = logging.getLogger(__name__)
 
 
-def configure_dspy_lm(model: str = "gpt-4o", temperature: float = 0.3) -> dspy.LM:
+def configure_dspy_lm(model: str = None, temperature: float = None) -> dspy.LM:
     """Configure DSPy LM with 云雾 API."""
+    model = model or cfg.DSPY_MODEL
+    temperature = temperature if temperature is not None else cfg.DSPY_TEMPERATURE
     lm = dspy.LM(
         model=f"openai/{model}",
         temperature=temperature,
-        api_base="https://api.wlai.vip/v1",
+        api_base=cfg.OPENAI_API_BASE,
         api_key=os.getenv("OPENAI_API_KEY"),
-        cache=False,  # Must be False: 5 predictions per question need diversity
+        cache=cfg.DSPY_CACHE,
     )
     dspy.configure(lm=lm)
     return lm
@@ -179,9 +183,9 @@ class NumericForecaster(dspy.Module):
 
 # ─────────────────────────── Hub ───────────────────────────
 
-OPTIMIZED_BINARY_PATH = "json/optimized_binary_forecaster.json"
-OPTIMIZED_MC_PATH = "json/optimized_mc_forecaster.json"
-OPTIMIZED_NUMERIC_PATH = "json/optimized_numeric_forecaster.json"
+OPTIMIZED_BINARY_PATH = cfg.OPTIMIZED_BINARY_PATH
+OPTIMIZED_MC_PATH = cfg.OPTIMIZED_MC_PATH
+OPTIMIZED_NUMERIC_PATH = cfg.OPTIMIZED_NUMERIC_PATH
 
 
 class DSPyForecasterHub:
@@ -303,13 +307,11 @@ def mc_metric(example: dspy.Example, prediction, trace=None) -> float:
 def numeric_metric(example: dspy.Example, prediction, trace=None) -> float:
     """
     MAE-based metric for numeric forecasts (normalized to [0,1]).
-    Requires example.resolved_normalized (float in [0,1]) — the answer
-    normalized via Autocast's log-scale formula.
+    Supports both Metaculus (lower_bound/upper_bound) and Autocast (choices_meta) data.
     Parses the median (P50 or average of P40/P60) from prediction.percentiles.
     Returns score in [0, 1] where higher is better.
     """
     import re
-    from build_trainset import autocast_normalize
     try:
         resolved = float(example.resolved_normalized)
         percentile_text = str(prediction.percentiles)
@@ -332,11 +334,22 @@ def numeric_metric(example: dspy.Example, prediction, trace=None) -> float:
             predicted = vals[len(vals) // 2]
 
         # Normalize model output (real units) to [0,1] before comparing
-        choices = example.choices_meta if hasattr(example, "choices_meta") else {}
-        if choices:
-            predicted = autocast_normalize(predicted, choices)
+        # Metaculus data: has lower_bound/upper_bound, use linear normalization
+        if hasattr(example, "lower_bound") and hasattr(example, "upper_bound"):
+            lb = float(example.lower_bound)
+            ub = float(example.upper_bound)
+            if ub > lb:
+                predicted = max(0.0, min(1.0, (predicted - lb) / (ub - lb)))
+            else:
+                predicted = max(0.0, min(1.0, predicted))
         else:
-            predicted = max(0.0, min(1.0, predicted))
+            # Autocast data: has choices_meta with log-scale normalization
+            choices = example.choices_meta if hasattr(example, "choices_meta") else {}
+            if choices:
+                from build_trainset import autocast_normalize
+                predicted = autocast_normalize(predicted, choices)
+            else:
+                predicted = max(0.0, min(1.0, predicted))
 
         mae = abs(predicted - resolved)
         return 1.0 - mae  # higher is better

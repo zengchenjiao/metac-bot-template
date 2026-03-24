@@ -8,6 +8,8 @@ from typing import Optional
 
 from tavily import TavilyClient
 
+import config.settings as cfg
+
 logger = logging.getLogger(__name__)
 
 
@@ -36,10 +38,10 @@ class TavilySearcher:
         try:
             response = self.client.search(
                 query=query,
-                search_depth="advanced",
+                search_depth=cfg.TAVILY_SEARCH_DEPTH,
                 topic="news",
                 max_results=min(max_results, 10),
-                include_answer=False,
+                include_answer=cfg.TAVILY_INCLUDE_ANSWER,
             )
 
             results = response.get("results", [])
@@ -53,9 +55,8 @@ class TavilySearcher:
                 url = article.get("url", "")
                 published_date = article.get("published_date", "")
 
-                # Truncate content to first 500 chars
-                if content and len(content) > 500:
-                    content = content[:500] + "..."
+                if content and len(content) > cfg.TAVILY_CONTENT_TRUNCATE_LENGTH:
+                    content = content[:cfg.TAVILY_CONTENT_TRUNCATE_LENGTH] + "..."
 
                 article_text = f"""Article {idx}: {title}
 {f"Published: {published_date}" if published_date else ""}
