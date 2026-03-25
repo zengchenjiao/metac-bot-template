@@ -45,7 +45,9 @@ EXTRA_METADATA_IN_EXPLANATION = True
 MAX_CONCURRENT_QUESTIONS = 2
 
 # structure_output validation
-STRUCTURE_OUTPUT_VALIDATION_SAMPLES = 2
+# Set to 1 to avoid false-positive failures from minor floating-point
+# differences when the parser normalizes probabilities (e.g. 0.0099 vs 0.01).
+STRUCTURE_OUTPUT_VALIDATION_SAMPLES = 1
 
 # ─────────────────────────── Search Configuration ───────────────────────────
 

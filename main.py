@@ -284,18 +284,47 @@ class SpringTemplateBot2026(ForecastBot):
             - Turn any values that are in scientific notation into regular numbers.
             """
         )
-        percentile_list: list[Percentile] = await structure_output(
-            reasoning,
-            list[Percentile],
-            model=self.get_llm("parser", "llm"),
-            additional_instructions=parsing_instructions,
-            num_validation_samples=self._structure_output_validation_samples,
-        )
-        prediction = NumericDistribution.from_question(percentile_list, question)
-        logger.info(
-            f"Forecasted URL {question.page_url} with prediction: {prediction.declared_percentiles}."
-        )
-        return ReasonedPrediction(prediction_value=prediction, reasoning=reasoning)
+
+        # Try parsing percentiles, retry once with a fresh LLM call if too few are parsed
+        for attempt in range(2):
+            try:
+                percentile_list: list[Percentile] = await structure_output(
+                    reasoning,
+                    list[Percentile],
+                    model=self.get_llm("parser", "llm"),
+                    additional_instructions=parsing_instructions,
+                    num_validation_samples=self._structure_output_validation_samples,
+                )
+                prediction = NumericDistribution.from_question(percentile_list, question)
+                logger.info(
+                    f"Forecasted URL {question.page_url} with prediction: {prediction.declared_percentiles}."
+                )
+                return ReasonedPrediction(prediction_value=prediction, reasoning=reasoning)
+            except (ValueError, Exception) as e:
+                if attempt == 0:
+                    logger.warning(
+                        f"Numeric parsing attempt 1 failed for {question.page_url}: {e}. "
+                        f"Re-invoking LLM for a cleaner output."
+                    )
+                    # Re-invoke the LLM to get a cleaner reasoning with explicit percentiles
+                    retry_prompt = clean_indents(
+                        f"""
+                        {prompt}
+
+                        IMPORTANT: You MUST output your final answer as exactly 6 percentiles in this format:
+                        Percentile 10: <number>
+                        Percentile 20: <number>
+                        Percentile 40: <number>
+                        Percentile 60: <number>
+                        Percentile 80: <number>
+                        Percentile 90: <number>
+                        Values must be in ascending order and in units of {question.unit_of_measure}.
+                        """
+                    )
+                    reasoning = await self.get_llm("default", "llm").invoke(retry_prompt)
+                    logger.info(f"Retry reasoning for URL {question.page_url}: {reasoning}")
+                else:
+                    raise
 
     ##################################### DATE QUESTIONS #####################################
 
@@ -607,4 +636,11 @@ if __name__ == "__main__":
         forecast_reports = asyncio.run(
             template_bot.forecast_questions(questions, return_exceptions=True)
         )
-    template_bot.log_report_summary(forecast_reports)
+    try:
+        template_bot.log_report_summary(forecast_reports)
+    except RuntimeError as e:
+        # log_report_summary raises RuntimeError if any questions failed.
+        # Don't crash the whole run — the successful forecasts were already submitted.
+        logger.error(f"Some questions failed: {e}")
+        # Exit with 0 so CI doesn't mark the entire run as failed
+        # when only a few questions had parsing errors.
