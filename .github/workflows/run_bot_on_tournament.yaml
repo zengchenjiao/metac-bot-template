@@ -35,8 +35,6 @@ jobs:
       #   with:
       #     path: .venv
       #     key: venv-${{ runner.os }}-${{ steps.setup-python.outputs.python-version }}-${{ hashFiles('**/poetry.lock') }}
-      - name: Update lock file
-        run: poetry lock
       - name: Install dependencies
         run: poetry install --no-interaction --no-root
       - name: Setup optimized forecasters
